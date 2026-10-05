@@ -1,6 +1,10 @@
+import itertools
+
 import numpy as np
 from Bio import motifs
 from Bio.Seq import Seq
+from Bio import SeqIO
+import random
 
 def count_matrix(motifs):
     """
@@ -110,7 +114,72 @@ class MotifProfile:
         cons = ''.join(cons) # convert form list to string
         return cons
 
+
+class MotifFinder:
+    def __init__(self, sequences, l, seed=None):
+        self.sequences = sequences
+        self.l = l
+        self.rng = random.Random(seed) # the finder's own random generator
+        self.windows = [] # a list with one list of l-mers per sequence: every sequence cut into all its l-mers
+        for seq in self.sequences:
+            w = [] # list of windows for seq
+            for shift in range(len(seq) - self.l + 1):
+                w.append(seq[shift:shift+self.l])
+            self.windows.append(w)
+
+    def total_distance(self, pattern):
+        list_min = [] # list of minimal distance of the pattern from each sequence
+        for seq in self.windows:
+            seq_dist = []
+            for w in seq:
+                dist = hamming_distance(pattern, w)
+                seq_dist.append(dist)
+            list_min.append(min(seq_dist))
+        return sum(list_min)
+
+    def median_string(self):
+        """
+        Returns the pattern with the smallest total distance out of all 4^l patterns of length l, together with that distance
+        """
+        all_possible_str = []
+        for chars in itertools.product("ACGT", repeat=self.l):
+            s = ''.join(chars)
+            all_possible_str.append(s)
+        distances = []
+        for str in all_possible_str:
+            distances.append(self.total_distance(str))
+        idx = distances.index(min(distances))
+        return all_possible_str[idx], distances[idx]
+
+    def randomized_search(self):
+        motif_matrix = []
+        for seq in self.windows:
+            motif_matrix.append(self.rng.choice(seq))
+        motif_score = score(motif_matrix)
+        while True:
+            rand_profile = MotifProfile(motif_matrix, pseudocount=1)
+            new_matrix = []
+            for sequence in self.sequences:
+                motif_matrix.append(rand_profile.most_probable_lmer(sequence))
+            if score(new_matrix) <= motif_score:
+                break
+            motif_matrix = new_matrix
+            motif_score = score(motif_matrix)
+        return motif_matrix, motif_score
+
+    def best_of(self, runs):
+        best_matrix = []
+        best_score = 0
+        for i in range(runs):
+            i_matrix, i_score = self.randomized_search()
+            if i_score > best_score:
+                best_matrix = i_matrix
+                best_score = i_score
+        return best_matrix, best_score
+
+
 if __name__ == "__main__":
+    ## TASK 1
     lecture_dna = [
         "TGACGTATAAGTTGCGATGGACGAGATAGCAGAGAATAGGCAACGAGAGATAAGCAG",
         "GACGGTAGCAGATAGACAGATGAAGAGTATGAATTGCACAGATAGCAGATAGCAGAT",
@@ -125,6 +194,7 @@ if __name__ == "__main__":
     print(hamming_distance("ACGT", "ACCA"))
     print(total_distance("AC", ["GACT", "TTAG"]))
 
+    ## TASK 2
     print('---- MotifProfile ----')
     profile = MotifProfile(["ATCCGTA", "GTGCATA", "AAGCGTA", "ATGCGTG"])
     print(profile.l)  # 7
@@ -138,3 +208,12 @@ if __name__ == "__main__":
     bio.pseudocounts = 1
     print(bio.consensus)  # ATGCGTA
     print(bio.pwm["A"])  # the same numbers as your profile.ppm["A"]
+
+    ## TASK 3
+    sequences = [str(record.seq) for record in SeqIO.parse("planted_motif.fasta", "fasta")]
+    finder = MotifFinder(lecture_dna, 6)
+    median_str = finder.median_string()
+    print(median_str)
+
+    # does not work
+    print(finder.best_of(100))
