@@ -1,0 +1,8 @@
+[project]
+name = "exercise-motifs"
+version = "0.1.0"
+description = "Motif search: median string and randomized motif search"
+requires-python = ">=3.11"
+dependencies = [
+    "biopython>=1.88",
+]
