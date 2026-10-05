@@ -1,4 +1,6 @@
 import numpy as np
+from Bio import motifs
+from Bio.Seq import Seq
 
 def count_matrix(motifs):
     """
@@ -68,6 +70,46 @@ def total_distance(pattern, sequences):
         list_min.append(min(seq_dist))
     return sum(list_min)
 
+
+class MotifProfile:
+    def __init__(self, motifs, pseudocount=1):
+        self.pseudocount = pseudocount
+        self.motifs = motifs
+        self.l = len(motifs[0])
+        self.ppm = count_matrix(motifs)
+        for base in ['A', 'C', 'G', 'T']:
+            ppm_array = np.array(self.ppm[base])
+            ppm_array = (ppm_array + self.pseudocount) / (len(motifs) + 4 * self.pseudocount)
+            self.ppm[base] = ppm_array.tolist()
+
+    def lmer_probability(self, lmer):
+        probability = 1
+        for idx, base in enumerate(lmer):
+            prob = self.ppm[base][idx]
+            probability = probability * prob
+        return probability
+
+    def most_probable_lmer(self, sequence):
+        lmer = []
+        max_prob = 0
+        for shift in range(len(sequence) - self.l + 1):
+            prob = self.lmer_probability(sequence[shift:shift+self.l])
+            if prob > max_prob:
+                max_prob = prob
+                lmer = sequence[shift:shift+self.l]
+        return lmer
+
+    def consensus(self):
+        count_mat = count_matrix(self.motifs)
+        cons = ['A' for i in range(self.l)]  # 'A' at all positions
+        for base in ['C', 'G', 'T']:
+            for idx in range(self.l):
+                current_base = cons[idx]
+                if count_mat[base][idx] > count_mat[current_base][idx]:
+                    cons[idx] = base
+        cons = ''.join(cons) # convert form list to string
+        return cons
+
 if __name__ == "__main__":
     lecture_dna = [
         "TGACGTATAAGTTGCGATGGACGAGATAGCAGAGAATAGGCAACGAGAGATAAGCAG",
@@ -82,3 +124,17 @@ if __name__ == "__main__":
     print(consensus(["ACGT", "ATGT", "CCGA"]))
     print(hamming_distance("ACGT", "ACCA"))
     print(total_distance("AC", ["GACT", "TTAG"]))
+
+    print('---- MotifProfile ----')
+    profile = MotifProfile(["ATCCGTA", "GTGCATA", "AAGCGTA", "ATGCGTG"])
+    print(profile.l)  # 7
+    print(profile.ppm["A"])  # [0.5, 0.25, 0.125, 0.125, 0.25, 0.125, 0.5]
+    print(round(profile.lmer_probability("ATGCGTA"), 4))
+    print(MotifProfile(["GTAC", "TTAA"]).most_probable_lmer("ACTGGATGACCC")) # "TGAC"
+    print(profile.consensus()) # "ATGCGTA"
+
+    # check with biopython
+    bio = motifs.create([Seq(site) for site in ["ATCCGTA", "GTGCATA", "AAGCGTA", "ATGCGTG"]])
+    bio.pseudocounts = 1
+    print(bio.consensus)  # ATGCGTA
+    print(bio.pwm["A"])  # the same numbers as your profile.ppm["A"]
